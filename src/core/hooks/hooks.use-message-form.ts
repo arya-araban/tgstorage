@@ -1,7 +1,7 @@
 import { useMemo, useCallback, useRef, useEffect } from 'preact/hooks'
 
 import type { Folder, InputFile, Message } from '~/core/store'
-import { getFileMeta } from '~/core/cache'
+import { deleteFile, getFile, getFileMeta, setFile } from '~/core/cache'
 import {
   createMessage,
   editMessage,
@@ -15,6 +15,7 @@ import { checkIsParentFilesMessage, stringifyParentFilesMessage } from '~/tools/
 import { parseInputText, normalizeInputText } from '~/tools/handle-content-text'
 import { parseImageFile } from '~/tools/parse-image-file'
 import { parseVideoFile } from '~/tools/parse-video-file'
+import { FILE_SIZE, splitFileIntoChunks } from '~/tools/handle-file'
 
 const initialMessage = {
   key: 0,
@@ -128,30 +129,57 @@ export const useMessageForm = (folder: Folder) => {
   }, [messageRef, setMessage])
 
   const handleAddFiles = useCallback(async (fileKeys: string[]) => {
-    const message = messageRef.current
-    const uniqFileKeys = fileKeys
-      .filter(fileKey => (message.inputFiles || []).every(inputFile => inputFile.fileKey !== fileKey))
+    const message = messageRef.current;
+    let uniqFileKeys = fileKeys
+      .filter(fileKey => (message.inputFiles || []).every(inputFile => inputFile.fileKey !== fileKey));
 
-    let inputFiles = [
-      ...uniqFileKeys.map(fileKey => {
-        const fileMeta = getFileMeta(fileKey)
-        return {
-          id: '',
-          progress: 0,
-          progressSize: 0,
-          fileKey,
-          name: fileMeta?.name || '',
-          size: fileMeta?.size || 0,
-          parsing: true
+    
+    const largeFileChunks: string[] = [];
+    for (const fileKey of [...uniqFileKeys]) {
+      const fileMeta = getFileMeta(fileKey);
+      if (fileMeta && fileMeta.size > FILE_SIZE.MB2000) {
+        
+        uniqFileKeys = uniqFileKeys.filter(k => k !== fileKey);
+        
+        
+        const file = getFile(fileKey);
+        if (file) {
+          const chunks = splitFileIntoChunks(file as File);
+          
+          
+          for (const chunk of chunks) {
+            const chunkKey = setFile(chunk);
+            if (chunkKey) {
+              largeFileChunks.push(chunkKey);
+            }
+          }
         }
-      }),
-      ...(message.inputFiles || [])
-    ]
+        deleteFile(fileKey);
+      }
+    }
+  
+  uniqFileKeys = [...uniqFileKeys, ...largeFileChunks];
 
-    setMessage({
-      ...message,
-      inputFiles
-    })
+  let inputFiles = [
+    ...uniqFileKeys.map(fileKey => {
+      const fileMeta = getFileMeta(fileKey);
+      return {
+        id: '',
+        progress: 0,
+        progressSize: 0,
+        fileKey,
+        name: fileMeta?.name || '',
+        size: fileMeta?.size || 0,
+        parsing: true
+      };
+    }),
+    ...(message.inputFiles || [])
+  ];
+
+  setMessage({
+    ...message,
+    inputFiles
+  });
 
     for (let i = 0; i < uniqFileKeys.length; i++) {
       const fileKey = uniqFileKeys[i]

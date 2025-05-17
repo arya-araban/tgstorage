@@ -4,7 +4,7 @@
   "phoneBanDescription": "Telegram's automatic protection has been triggered and your account has been banned. This is a one-time error, it will not happen again after recovering.",
   "phoneLabel": "Phone Number",
   "countryLabel": "Country",
-  "codeDescription:auth.sentCodeTypeApp": "We have sent you a message with the code at the Telegram app.",
+  "codeDescription:auth.sentCodeTypeApp": "We have sent you a message with the code in the Telegram app.",
   "codeDescription:auth.sentCodeTypeSms": "We have sent you an SMS\n with the code.",
   "codeDescription:auth.sentCodeTypeCall": "You will receive an automatic call with a synthesized voice which tell you a verification code.",
   "codeDescription:auth.sentCodeTypeFlashCall": "You will receive an automatic call with a synthesized voice which tell you a verification code.",

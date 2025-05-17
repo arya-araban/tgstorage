@@ -2,6 +2,7 @@ import latinize from 'latinize'
 
 import type { DownloadingFile } from '~/core/store'
 import { setFile, getFileUrl } from '~/core/cache'
+import { formatSize } from './format-size'
 
 const SW_STREAM_PATH = '/sw/stream'
 const SW_SAVE_PATH = '/sw/save'
@@ -27,6 +28,66 @@ export const getFilePartSize = (fileSize: number) => (
       (fileSize <= FILE_SIZE.MB2000) ? 512 :
         0
 ) * 1024
+
+
+
+export const splitFileIntoChunks = (file: File, maxChunkSize: number = FILE_SIZE.MB2000): File[] => {
+  if (file.size <= maxChunkSize) {
+    return [file];
+  }
+
+  const chunks: File[] = [];
+  const totalChunks = Math.ceil(file.size / maxChunkSize);
+  const fileExtension = file.name.includes('.') 
+    ? file.name.substring(file.name.lastIndexOf('.')) 
+    : '';
+  const fileName = file.name.includes('.')
+    ? file.name.substring(0, file.name.lastIndexOf('.'))
+    : file.name;
+
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * maxChunkSize;
+    const end = Math.min(file.size, start + maxChunkSize);
+    
+    const chunk = file.slice(start, end, file.type);
+    
+    const chunkFile = new File(
+      [chunk], 
+      `${fileName}.part${i + 1}${totalChunks > 1 ? 'of' + totalChunks : ''}${fileExtension}`,
+      { type: file.type }
+    );
+    
+    chunks.push(chunkFile);
+  }
+
+  return chunks;
+};
+
+export const processFileForUpload = async (file: File): Promise<string[]> => {
+  if (file.size <= FILE_SIZE.MB2000) {
+    const fileKey = setFile(file);
+    return fileKey ? [fileKey] : [];
+  }
+
+  console.log(`Splitting file ${file.name} (${formatSize(file.size)}) into chunks`);
+  
+  try {
+    const chunks = splitFileIntoChunks(file);
+    const fileKeys: string[] = [];
+    
+    for (const chunk of chunks) {
+      const fileKey = setFile(chunk);
+      if (fileKey) {
+        fileKeys.push(fileKey);
+      }
+    }
+    
+    return fileKeys;
+  } catch (error) {
+    console.error('Error splitting file:', error);
+    return [];
+  }
+};
 
 export const generateLocalFileKey = ({ name, size, type, lastModified }) =>
   `${name}-${type}-${lastModified}-${size}`
@@ -66,30 +127,30 @@ export const transformToBytes = (file: Blob | undefined) => {
 let fileInput: HTMLInputElement
 export const selectFiles = (): Promise<string[]> => new Promise(resolve => {
   if (!fileInput) {
-    fileInput = self.document.createElement('input')
-    fileInput.type = 'file'
-    fileInput.multiple = true
-    fileInput.accept = '*'
+    fileInput = self.document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.multiple = true;
+    fileInput.accept = '*';
   }
 
-  fileInput.onchange = (ev) => {
-    const fileList = Array.from((ev.target as HTMLInputElement).files || [])
-    const fileKeys: string[] = []
+  fileInput.onchange = async (ev) => {
+    const fileList = Array.from((ev.target as HTMLInputElement).files || []);
+    const fileKeysPromises: Promise<string[]>[] = [];
 
     for (let i = 0; i < fileList.length; i++) {
-      const fileKey = setFile(fileList[i])
-      if (fileKey && !fileKeys.includes(fileKey)) {
-        fileKeys.push(fileKey)
-      }
+      fileKeysPromises.push(processFileForUpload(fileList[i]));
     }
 
-    resolve(fileKeys)
-    fileInput.value = ''
-    fileInput.onchange = null
-  }
+    const fileKeysArrays = await Promise.all(fileKeysPromises);
+    const fileKeys = fileKeysArrays.flat();
 
-  fileInput.click()
-})
+    resolve(fileKeys);
+    fileInput.value = '';
+    fileInput.onchange = null;
+  };
+
+  fileInput.click();
+});
 
 let link: HTMLAnchorElement
 export const saveFile = (downloadingFile: DownloadingFile) => {

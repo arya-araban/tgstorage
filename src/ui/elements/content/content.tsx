@@ -3,9 +3,9 @@ import { h } from 'preact'
 import { memo } from 'preact/compat'
 import { useCallback, useEffect } from 'preact/hooks'
 
-import { setFile } from '~/core/cache'
 import { useCallbackRef } from '~/tools/hooks'
 import { Slide } from '~/ui/elements/slide'
+import { processFileForUpload } from '~/tools/handle-file'
 
 import styles from './content.styl'
 
@@ -32,45 +32,41 @@ export const Content: FC<Props> = memo(({
     ev.preventDefault()
   }, [dropAvailable])
 
-  const handleDrop = useCallback((ev: DragEvent) => {
+  const handleDrop = useCallback(async (ev: DragEvent) => {
     if (!dropAvailable) return
 
     ev.stopPropagation()
     ev.preventDefault()
 
     const fileList = ev.dataTransfer?.files
-    const fileKeys: string[] = []
-
-    for (let i = 0; i < (fileList?.length || 0); i++) {
-      const fileKey = setFile(fileList?.item(i))
-      if (fileKey && !fileKeys.includes(fileKey)) {
-        fileKeys.push(fileKey)
-      }
-    }
+    if (!fileList?.length) return;
+    
+    const files = Array.from(fileList);
+    const fileKeysPromises = files.map(file => processFileForUpload(file));
+    const fileKeysArrays = await Promise.all(fileKeysPromises);
+    const fileKeys = fileKeysArrays.flat();
 
     if (fileKeys.length) {
       onAddFiles?.(fileKeys)
     }
   }, [dropAvailable, onAddFiles])
 
-  const [_handlePaste, handlePasteRef] = useCallbackRef((ev: ClipboardEvent) => {
+  const [_handlePaste, handlePasteRef] = useCallbackRef(async (ev: ClipboardEvent) => {
     if (!dropAvailable) return
 
     const fileList = ev.clipboardData?.files
-    const fileKeys: string[] = []
     const text = fileList?.length ? '' : ev.clipboardData?.getData('text')
 
-    for (let i = 0; i < (fileList?.length || 0); i++) {
-      const fileKey = setFile(fileList?.item(i))
-      if (fileKey && !fileKeys.includes(fileKey)) {
-        fileKeys.push(fileKey)
-      }
-    }
+    if (fileList?.length) {  
+      const files = Array.from(fileList);
+      const fileKeysPromises = files.map(file => processFileForUpload(file));
+      const fileKeysArrays = await Promise.all(fileKeysPromises);
+      const fileKeys = fileKeysArrays.flat();
 
-    if (fileKeys.length) {
-      onAddFiles?.(fileKeys)
-    }
-    if (text) {
+      if (fileKeys.length) {
+        onAddFiles?.(fileKeys)
+      }
+    } else if (text) {
       onAddMessage?.(text)
     }
   }, [dropAvailable, onAddFiles, onAddMessage])
